@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -31,8 +32,9 @@ import (
 )
 
 var (
-	CacheDir string
-	WebBind  string
+	CacheDir       string
+	WebBind        string
+	ListenProtocol string
 )
 
 func makeCommand(cmd string, args ...string) *exec.Cmd {
@@ -54,6 +56,11 @@ func handleFetch(w http.ResponseWriter, r *http.Request) {
 	}
 	commit := r.FormValue("commit") // optional
 	tree := r.FormValue("tree")     // optional
+	format := r.FormValue("format") // required
+	if len(format) == 0 {
+		http.Error(w, "Must specify format, e.g. tgz", 400)
+		return
+	}
 
 	// First, make sure workspace exists
 	hash := sha256.Sum256([]byte(repo))
@@ -91,7 +98,7 @@ func handleFetch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Optimistically try, will fail if we don't have the commit, but it's cheap to try
-	cmd := makeCommand("git", "--git-dir", gd, "archive", "--format", "tgz", commit+":"+tree)
+	cmd := makeCommand("git", "--git-dir", gd, "archive", "--format", "tar", commit+":"+tree)
 	cmd.Stdout = w
 	err = cmd.Run()
 	if err != nil && !haveFetched {
@@ -104,7 +111,7 @@ func handleFetch(w http.ResponseWriter, r *http.Request) {
 
 		haveFetched = true
 
-		cmd := makeCommand("git", "--git-dir", gd, "archive", "--format", "tgz", commit+":"+tree)
+		cmd := makeCommand("git", "--git-dir", gd, "archive", "--format", format, commit+":"+tree)
 		cmd.Stdout = w
 		err = cmd.Run()
 	}
@@ -118,14 +125,21 @@ func handleFetch(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	flag.StringVar(&CacheDir, "cachedir", "/tmp/gitcache", "Directory to use for caching.")
-	flag.StringVar(&WebBind, "webbind", ":9090", "Binding for webserver.")
+	flag.StringVar(&WebBind, "webbind", ":9091", "Binding for webserver.")
+	flag.StringVar(&ListenProtocol, "protocol", "tcp4", "Listen on tcp or tcp4")
 	flag.Parse()
 
 	http.HandleFunc("/fetch", handleFetch) // set router
 
-	log.Print("Serving on ", WebBind)
-	err := http.ListenAndServe(WebBind, nil) // set listen port
+	ln, err := net.Listen(ListenProtocol, WebBind) // explicit listener since we want ipv4 today
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
+	}
+
+	log.Print("Serving on ", WebBind)
+
+	err = http.Serve(ln, nil)
+	if err != nil {
+		log.Fatal("Serve: ", err)
 	}
 }
