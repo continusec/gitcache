@@ -16,7 +16,7 @@ limitations under the License.
 
 */
 
-package main
+package gitcache
 
 import (
 	"archive/tar"
@@ -24,19 +24,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"flag"
 	"io"
 	"log"
-	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
 	"time"
-
-	homedir "github.com/mitchellh/go-homedir"
 )
 
 func makeCommand(cmd string, args ...string) *exec.Cmd {
@@ -149,7 +144,7 @@ func preflightAndInit(repo, branch, format, cacheDir string) (string, error) {
 }
 
 // If outputDir is "", write to w. Else write file to outpuDir, and name of file to w
-func fetchLatest(repo, branch, commit, tree, format, cacheDir string, outputDir string, ourOutput io.Writer) error {
+func FetchLatest(repo, branch, commit, tree, format, cacheDir string, outputDir string, ourOutput io.Writer) error {
 	gd, err := preflightAndInit(repo, branch, format, cacheDir)
 	if err != nil {
 		return err
@@ -203,90 +198,4 @@ func fetchLatest(repo, branch, commit, tree, format, cacheDir string, outputDir 
 	}
 
 	return sendDownstream(gd, commit, tree, w)
-}
-
-func makeHandleFetch(cacheDir string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		err := fetchLatest(r.FormValue("repo"),
-			r.FormValue("branch"),
-			r.FormValue("commit"),
-			r.FormValue("tree"),
-			r.FormValue("format"),
-			cacheDir, "", w)
-		if err != nil {
-			log.Println("Error:", err.Error())
-			http.Error(w, err.Error(), 400)
-		}
-	}
-}
-
-func runServer(listenProtocol, webBind, cacheDir string) error {
-	http.HandleFunc("/fetch", makeHandleFetch(cacheDir)) // set router
-
-	ln, err := net.Listen(listenProtocol, webBind) // explicit listener since we want ipv4 today
-	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
-	}
-
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		log.Fatal("net.InterfaceAddrs: ", err)
-	}
-
-	for _, a := range addrs {
-		if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				log.Print("(optional) export GITCACHE=http://" + ipnet.IP.String() + webBind)
-			}
-		}
-	}
-
-	log.Print("Serving on " + webBind)
-
-	return http.Serve(ln, nil)
-}
-
-func main() {
-	var (
-		cacheDir       string
-		webBind        string
-		listenProtocol string
-
-		repo   string
-		tree   string
-		branch string
-		commit string
-		format string
-
-		outDir string
-	)
-
-	flag.StringVar(&cacheDir, "cachedir", "~/.gitcache", "Directory to use for caching. May get quite large")
-	flag.StringVar(&webBind, "webbind", ":9091", "Binding for webserver.")
-	flag.StringVar(&listenProtocol, "protocol", "tcp4", "Listen on tcp or tcp4")
-
-	flag.StringVar(&repo, "repo", "", "Repository to fetch from, required or a server will start instead.")
-	flag.StringVar(&tree, "tree", "", "Tree to filter, by default get all")
-	flag.StringVar(&branch, "branch", "", "Required, branch containing commit")
-	flag.StringVar(&commit, "commit", "", "Optional - if not specified will always contact server")
-	flag.StringVar(&outDir, "outdir", ".", "Directory to write output.")
-	flag.StringVar(&format, "format", "tgz", "tar or tgz")
-
-	flag.Parse()
-
-	cacheDir, err := homedir.Expand(cacheDir)
-	if err != nil {
-		log.Fatal("homedir.Expand: ", err)
-	}
-
-	if len(repo) == 0 {
-		err = runServer(listenProtocol, webBind, cacheDir)
-	} else {
-		err = fetchLatest(repo, branch, commit, tree, format, cacheDir, outDir, os.Stdout)
-	}
-
-	if err != nil {
-		log.Fatal("Error: ", err)
-	}
-
 }
