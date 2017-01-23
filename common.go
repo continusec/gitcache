@@ -34,6 +34,11 @@ import (
 	"time"
 )
 
+var (
+	// "Plausible" default tar time, since 0 isn't good enough
+	defaultModTime = time.Unix(1237767840, 0)
+)
+
 func makeCommand(cmd string, args ...string) *exec.Cmd {
 	log.Println(cmd, strings.Join(args, " "))
 
@@ -72,7 +77,7 @@ func sendDownstream(gd, commit, tree string, out io.Writer) error {
 
 		// Reset modification time to constant value else we get non-deterministic
 		// output from git
-		header.ModTime = time.Unix(0, 0)
+		header.ModTime = defaultModTime
 
 		err = tarOut.WriteHeader(header)
 		if err != nil {
