@@ -148,7 +148,7 @@ func preflightAndInit(repo, branch, format, cacheDir string) (string, error) {
 	return gd, nil
 }
 
-// If outputDir is "", write to w. Else write file to outpuDir, and name of file to w
+// If outputDir is "", write to w. Else write file to outputDir, and name of file to w
 func FetchLatest(repo, branch, commit, tree, format, cacheDir string, outputDir string, ourOutput io.Writer) error {
 	gd, err := preflightAndInit(repo, branch, format, cacheDir)
 	if err != nil {
